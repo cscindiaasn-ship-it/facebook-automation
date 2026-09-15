@@ -1,0 +1,6 @@
+Rewrite the following Hindi Facebook draft so it is clearer, shorter, factual, and useful.
+
+Do not add unverified legal/government claims. Preserve the intended meaning. Use simple Hindi and short paragraphs. Return JSON only with keys: title, caption, hashtags.
+
+Draft:
+{{DRAFT}}
