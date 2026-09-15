@@ -1,0 +1,155 @@
+{
+  "name": "Facebook Page Automation - Hindi - Approval",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Daily 09:00 IST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-900, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const topics = [\n  {topic:'जमीन रजिस्ट्री से पहले किन दस्तावेजों की जांच करें', category:'Land Registration'},\n  {topic:'दस्तावेज तैयार करते समय सामान्य गलतियां', category:'Document Services'},\n  {topic:'अपॉइंटमेंट बुकिंग के समय किन बातों का ध्यान रखें', category:'Appointment'},\n  {topic:'जमीन से जुड़े रिकॉर्ड की जानकारी कैसे व्यवस्थित रखें', category:'Land Records'},\n  {topic:'CSC/डीड राइटर सेवा लेते समय ग्राहक को क्या जानकारी देनी चाहिए', category:'Customer Awareness'}\n];\nconst day = Math.floor(Date.now()/86400000);\nconst t = topics[day % topics.length];\nreturn [{json:{topic:t.topic,category:t.category,content_id:`FB-${Date.now()}`,created_at:new Date().toISOString()}}];"
+      },
+      "id": "2",
+      "name": "Select Topic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-680, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name":"Authorization","value":"={{'Bearer ' + $env.OPENAI_API_KEY}}"},
+            {"name":"Content-Type","value":"application/json"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify({model:$env.OPENAI_MODEL || 'gpt-5-mini',input:[{role:'system',content:[{type:'input_text',text:'You are a careful Hindi Facebook Page content writer for an Indian CSC/deed-writer information page. Return JSON only with keys title, caption, hashtags. Use simple Hindi. Do not invent government rules, fees, legal provisions, deadlines or guarantees. If information can vary by state/district, tell readers to verify with the relevant official office. Avoid spam and misleading claims.'}]},{role:'user',content:[{type:'input_text',text:'Topic: '+$json.topic+'\\nCategory: '+$json.category}]}]})}}"
+      },
+      "id": "3",
+      "name": "Generate Hindi Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nlet text = r.output_text || '';\nif (!text && Array.isArray(r.output)) {\n  for (const item of r.output) {\n    if (Array.isArray(item.content)) for (const c of item.content) if (c.text) text += c.text;\n  }\n}\ntext = text.trim().replace(/^```json\\s*/,'').replace(/\\s*```$/,'');\nlet parsed;\ntry { parsed = JSON.parse(text); } catch (e) { throw new Error('AI JSON parse failed: '+text); }\nreturn [{json:{...$('Select Topic').item.json,title:parsed.title,caption:parsed.caption,hashtags:Array.isArray(parsed.hashtags)?parsed.hashtags.join(' '):String(parsed.hashtags||''),approval:'PENDING'}}];"
+      },
+      "id": "4",
+      "name": "Validate Post",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-200, 0]
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "={{$env.APPROVAL_EMAIL}}",
+        "subject": "={{'Facebook Post Approval - '+$json.title}}",
+        "emailType": "html",
+        "message": "={{'<h2>'+ $json.title +'</h2><p>'+ $json.caption.replace(/\\n/g,'<br>') +'</p><p><b>'+ $json.hashtags +'</b></p><p>Content ID: '+$json.content_id+'</p>'}}",
+        "approvalOptions": {"values":{"approvalType":"double","approveLabel":"Publish","disapproveLabel":"Reject"}}
+      },
+      "id": "5",
+      "name": "Human Approval",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [40, 0],
+      "credentials": {"gmailOAuth2":{"id":"REPLACE_AFTER_IMPORT","name":"Gmail OAuth2"}}
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true,"leftValue":"","typeValidation":"strict","version":2},
+          "conditions": [
+            {"leftValue":"={{$json.data?.approved ?? $json.approved ?? false}}","rightValue":true,"operator":{"type":"boolean","operation":"true","singleValue":true}}
+          ],
+          "combinator":"and"
+        }
+      },
+      "id": "6",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'https://graph.facebook.com/v23.0/'+$env.FACEBOOK_PAGE_ID+'/feed'}}",
+        "sendQuery": true,
+        "queryParameters": {"parameters":[{"name":"access_token","value":"={{$env.FACEBOOK_PAGE_ACCESS_TOKEN}}"},{"name":"message","value":"={{$json.title+'\\n\\n'+$json.caption+'\\n\\n'+$json.hashtags}}"}]},
+        "options": {}
+      },
+      "id": "7",
+      "name": "Publish to Facebook Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, -80]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "sendTo": "={{$env.NOTIFY_EMAIL || $env.APPROVAL_EMAIL}}",
+        "subject": "Facebook Post Published",
+        "emailType": "text",
+        "message": "={{'Published successfully.\\nContent ID: '+$json.content_id+'\\nFacebook response: '+JSON.stringify($json)}}"
+      },
+      "id": "8",
+      "name": "Success Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [780, -80],
+      "credentials": {"gmailOAuth2":{"id":"REPLACE_AFTER_IMPORT","name":"Gmail OAuth2"}}
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "sendTo": "={{$env.NOTIFY_EMAIL || $env.APPROVAL_EMAIL}}",
+        "subject": "Facebook Post Rejected",
+        "emailType": "text",
+        "message": "={{'The draft was rejected.\\nContent ID: '+$json.content_id+'\\nTopic: '+$json.topic}}"
+      },
+      "id": "9",
+      "name": "Rejected Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [540, 120],
+      "credentials": {"gmailOAuth2":{"id":"REPLACE_AFTER_IMPORT","name":"Gmail OAuth2"}}
+    }
+  ],
+  "connections": {
+    "Daily 09:00 IST": {"main":[[{"node":"Select Topic","type":"main","index":0}]]},
+    "Select Topic": {"main":[[{"node":"Generate Hindi Post","type":"main","index":0}]]},
+    "Generate Hindi Post": {"main":[[{"node":"Validate Post","type":"main","index":0}]]},
+    "Validate Post": {"main":[[{"node":"Human Approval","type":"main","index":0}]]},
+    "Human Approval": {"main":[[{"node":"Approved?","type":"main","index":0}]]},
+    "Approved?": {"main":[[{"node":"Publish to Facebook Page","type":"main","index":0}],[{"node":"Rejected Notification","type":"main","index":0}]]},
+    "Publish to Facebook Page": {"main":[[{"node":"Success Notification","type":"main","index":0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {"executionOrder":"v1","timezone":"Asia/Kolkata"},
+  "versionId": "facebook-page-automation-v1",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}
