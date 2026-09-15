@@ -1,0 +1,5 @@
+Create a clean, professional, realistic social-media visual for an Indian CSC/deed-writer information Facebook Page.
+
+Topic: {{TOPIC}}
+
+Use an Indian administrative/document-services context without copying government logos, seals, identity documents, signatures, or official-looking certificates. Keep the design uncluttered, readable, trustworthy, and suitable for a Facebook post. No fake claims or fake government branding. Prefer simple document, land-record, office-desk, computer, calendar, or service-counter visual metaphors depending on the topic.
